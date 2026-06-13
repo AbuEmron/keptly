@@ -239,6 +239,8 @@ h1.page{font-family:var(--font-d);font-size:30px;line-height:1.15;font-weight:40
 <script src="config.js" onerror="console.warn('config.js not found — running offline-only')"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js" onerror="window.__noSupabase=1"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" onerror="window.__noOCR=1"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.min.mjs" type="module" onerror="window.__noPDF=1"></script>
+<script>window.__pdfjsSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.min.mjs';</script>
 <script>
 /* ================= AVENOR CORE =================
    Offline-first: local storage is the source of truth.
@@ -371,17 +373,74 @@ async function doUnlock(then){
     // verify against a stored check token (detects wrong passphrase)
     if(S.vaultCheck){ try{ await decryptBlob(S.vaultCheck); }catch(e){ _vaultKey=null; return toast('That passphrase doesn\u2019t match'); } }
     else { S.vaultCheck=await encryptBlob('avenor-ok'); save(); }
-    closeSheet(); toast('Vault unlocked'); if(then==='scan') startScan(); else render();
+    closeSheet(); toast('Vault unlocked'); if(then==='scan') startScan(); else if(then==='drop') dropAnything(); else render();
   }catch(e){ toast('Could not unlock'); }
 }
 function lockVault(){ _vaultKey=null; toast('Vault locked'); render(); }
 
 /* capture -> compress -> OCR -> parse -> prefill */
-function startScan(){
-  if(!vaultUnlocked()) return sheetUnlock('scan');
-  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.capture='environment';
-  inp.onchange=()=>{ const f=inp.files&&inp.files[0]; if(f) processScan(f); };
+function startScan(){ pickDoc(true); }   // camera-first
+function dropAnything(){ pickDoc(false); }            // any file
+function pickDoc(camera){
+  if(!vaultUnlocked()) return sheetUnlock(camera?'scan':'drop');
+  const inp=document.createElement('input'); inp.type='file';
+  inp.accept = camera ? 'image/*' : 'image/*,application/pdf';
+  if(camera) inp.capture='environment';
+  inp.onchange=()=>{ const f=inp.files&&inp.files[0]; if(f) routeIntake(f); };
   inp.click();
+}
+async function routeIntake(file){
+  if(file.type==='application/pdf' || /\.pdf$/i.test(file.name)) return processPDF(file);
+  return processScan(file);
+}
+
+/* ---- PDF intake: pull embedded text, render page 1 as the stored image ---- */
+async function loadPdfLib(){
+  if(window.__noPDF) return null;
+  if(window.pdfjsLib) return window.pdfjsLib;
+  try{
+    const mod = await import(window.__pdfjsSrc);
+    mod.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.worker.min.mjs';
+    window.pdfjsLib=mod; return mod;
+  }catch(e){ console.warn('pdf lib failed',e); window.__noPDF=1; return null; }
+}
+async function processPDF(file){
+  openSheet(`<h3>Reading your PDF…</h3>
+    <div class="card pad" style="text-align:center;padding:30px 20px">
+      <div class="glyph" style="font-family:var(--font-d);font-size:26px;color:var(--brass)">A</div>
+      <p class="sub" id="ocrstat" style="margin-top:10px">Opening document…</p>
+      <div class="progress" style="margin-top:14px"><i id="ocrbar" style="width:10%"></i></div>
+    </div>`);
+  const stat=document.getElementById('ocrstat'), bar=document.getElementById('ocrbar');
+  const lib=await loadPdfLib();
+  let text='', dataURL=null, parsed={ref:'',expires:'',category:'Other'};
+  try{
+    const buf=await file.arrayBuffer();
+    if(lib){
+      const pdf=await lib.getDocument({data:buf}).promise;
+      if(bar) bar.style.width='30%';
+      // text layer from first 3 pages
+      const pages=Math.min(pdf.numPages,3);
+      for(let i=1;i<=pages;i++){ const pg=await pdf.getPage(i); const tc=await pg.getTextContent(); text+=' '+tc.items.map(it=>it.str).join(' '); }
+      // render page 1 to an image for the stored copy
+      if(stat) stat.textContent='Rendering page…';
+      const pg=await pdf.getPage(1); const vp=pg.getViewport({scale:1.4});
+      const c=document.createElement('canvas'); c.width=vp.width; c.height=vp.height;
+      await pg.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;
+      dataURL=c.toDataURL('image/jpeg',0.7);
+      if(bar) bar.style.width='65%';
+      // scanned PDF with no text layer -> OCR the rendered page
+      if(text.trim().length<20 && !window.__noOCR && window.Tesseract){
+        if(stat) stat.textContent='Scanned PDF — reading text…';
+        const r=await Tesseract.recognize(dataURL,'eng',{logger:m=>{ if(m.status==='recognizing text'&&bar) bar.style.width=(65+m.progress*30)+'%'; }});
+        text=r.data.text||'';
+      }
+    }
+    parsed=parseDoc(text||'');
+  }catch(e){ console.warn('pdf intake failed',e); toast('Could not read that PDF'); }
+  let enc=null; try{ if(dataURL) enc=await encryptBlob(dataURL); }catch(e){}
+  closeSheet();
+  sheetDoc(null, {scan:enc, ocr:(text||'').slice(0,4000), pdf:true, ...parsed});
 }
 function compress(file, max=1400){
   return new Promise(res=>{
@@ -722,7 +781,11 @@ V.vault = ()=>{
     <svg width="18" height="18" viewBox="0 0 24 24"><path class="ico-stroke" d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M4 12h16"/></svg>
     Scan a document
   </button>
-  <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="sheetDoc()">Add details manually</button>
+  <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="dropAnything()">
+    <svg width="17" height="17" viewBox="0 0 24 24"><path class="ico-stroke" d="M12 16V4m0 0l-4 4m4-4l4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+    Drop a PDF or screenshot
+  </button>
+  <button class="btn-quiet" style="width:100%;margin-top:6px" onclick="sheetDoc()">Add details manually</button>
 
   ${locked?`<div class="section card empty"><div class="glyph">🔒</div><p>Your vault is locked. Unlock to view your encrypted documents.</p><button class="btn btn-ink" onclick="sheetUnlock()">Unlock vault</button></div>`:`
   <div class="section card rowlist">
@@ -778,6 +841,59 @@ function listModule({eyebrow,title,sub,items,row,empty,sheet}){
   </div>`;
 }
 
+V.trust = ()=>{
+  ensureValue();
+  const scans=S.vault.filter(d=>d.scan).length;
+  const cloud = isPremium() ? 'On — synced to your private space' : (cloudConfigured()&&sbSession?'Account active, sync available with Premium':'Off — everything is on this device only');
+  const vaultState = S.vaultSalt ? (vaultUnlocked()?'Unlocked this session':'Locked') : 'Not set up yet';
+  const lastBak = S.lastBackup ? new Date(S.lastBackup).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}) : 'Never — download one now';
+  const line=(k,v,good)=>`<div class="netline"><span>${k}</span><b style="color:${good===false?'var(--signal)':good?'var(--verdant)':'var(--ink)'};font-family:var(--font-b);font-weight:600">${v}</b></div>`;
+  return `
+  <button class="backlink" onclick="go('settings')">‹ Settings</button>
+  <span class="eyebrow">Trust & Security</span>
+  <h1 class="page">Your data, your rules.</h1>
+  <p class="sub">Plain answers about where your information lives and who can read it.</p>
+
+  <div class="section"><span class="eyebrow">Status</span>
+    <div class="card rowlist" style="margin-top:12px">
+      ${line('Encrypted documents', scans+' scan'+(scans===1?'':'s')+' · AES-256', scans>0)}
+      ${line('Vault passphrase', vaultState, !!S.vaultSalt)}
+      ${line('Cloud sync', cloud, isPremium())}
+      ${line('Last backup', lastBak, !!S.lastBackup)}
+      ${line('Account recovery', S.vaultSalt?'Passphrase only — not recoverable':'N/A', false)}
+    </div>
+  </div>
+
+  <div class="section"><span class="eyebrow">How your scans are protected</span>
+    <div class="card pad" style="margin-top:12px">
+      <p style="font-size:14px;color:var(--ink-2);line-height:1.7">When you scan or drop a document, the image is encrypted on this device with a key derived from your passphrase. The text is read by OCR <b>in your browser</b> — the document is never sent anywhere to be read. If you turn on cloud sync, only the already-encrypted version is stored, so it can\u2019t be read on our side.</p>
+    </div>
+  </div>
+
+  <div class="section"><span class="eyebrow">What AI can and cannot do</span>
+    <div class="card rowlist" style="margin-top:12px">
+      <div class="row"><div class="check on"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div class="grow"><div class="title">Reads text from a document you scan</div><div class="meta">Only when you scan it, only on your device</div></div></div>
+      <div class="row"><div class="check on"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div class="grow"><div class="title">Suggests fields for you to approve</div><div class="meta">You confirm every value — nothing is saved silently</div></div></div>
+      <div class="row"><div class="grow"><div class="title" style="color:var(--ink-3)">✕ Cannot read documents on a server</div><div class="meta">They\u2019re encrypted before they ever leave the device</div></div></div>
+      <div class="row"><div class="grow"><div class="title" style="color:var(--ink-3)">✕ Cannot train on your data</div><div class="meta">Your information is never used to train any model</div></div></div>
+    </div>
+  </div>
+
+  <div class="section"><span class="eyebrow">Our commitments</span>
+    <div class="card pad" style="margin-top:12px">
+      <p style="font-size:14px;color:var(--ink-2);line-height:1.9">No advertising, ever.<br>No selling your data, ever.<br>No training AI on your data, ever.<br>Free export of everything, any time.<br>You can erase it all in one tap.</p>
+      <a class="btn btn-ghost" href="privacy.html" style="width:100%;margin-top:14px">Read the full privacy policy</a>
+    </div>
+  </div>
+
+  <div class="section"><span class="eyebrow">Your data</span>
+    <div class="card rowlist" style="margin-top:12px">
+      <button class="row" style="width:100%;text-align:left" onclick="exportBackup()"><div class="grow"><div class="title">Download all my data</div><div class="meta">An unencrypted JSON copy you keep</div></div><span class="chip">Export</span></button>
+      <button class="row" style="width:100%;text-align:left" onclick="eraseAll()"><div class="grow"><div class="title" style="color:var(--signal)">Erase everything on this device</div><div class="meta">Permanent — download a backup first</div></div></button>
+    </div>
+  </div>`;
+};
+
 V.settings = ()=>{
   const counts = S.goals.length+S.projects.length+S.home.length+S.vehicles.length+S.vault.length+S.family.length;
   return `
@@ -809,6 +925,13 @@ V.settings = ()=>{
   </div>
 
   <div class="section">
+    <span class="eyebrow">Trust & Security</span>
+    <div class="card rowlist" style="margin-top:12px">
+      <button class="row" style="width:100%;text-align:left" onclick="go('trust')"><div class="grow"><div class="title">Privacy & Security Center</div><div class="meta">Encryption status, what AI can access, your commitments</div></div><span class="chip green">Protected</span></button>
+    </div>
+  </div>
+
+  <div class="section">
     <span class="eyebrow">Explore</span>
     <div class="card rowlist" style="margin-top:12px">
       <button class="row" style="width:100%;text-align:left" onclick="startTour()"><div class="grow"><div class="title">Take the guided tour</div><div class="meta">A 60-second walkthrough of every part of AVENOR</div></div><span class="chip">Start</span></button>
@@ -820,7 +943,7 @@ V.settings = ()=>{
     <span class="eyebrow">About</span>
     <div class="card rowlist" style="margin-top:12px">
       <a class="row" href="privacy.html" style="text-decoration:none;color:inherit"><div class="grow"><div class="title">Privacy policy</div><div class="meta">Short version: your data never leaves this device</div></div><span class="chip">View</span></a>
-      <div class="row"><div class="grow"><div class="title">Version</div><div class="meta">AVENOR 1.6 — encrypted scanning vault</div></div></div>
+      <div class="row"><div class="grow"><div class="title">Version</div><div class="meta">AVENOR 1.7 — Drop Anything + Trust Center</div></div></div>
     </div>
   </div>
 
