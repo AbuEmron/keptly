@@ -279,6 +279,7 @@ const I = {
   home:'<svg viewBox="0 0 24 24"><path class="ico-stroke" d="M4 21V8l8-5 8 5v13M9 21v-6h6v6"/></svg>',
   car:'<svg viewBox="0 0 24 24"><path class="ico-stroke" d="M5 16l1.2-5.2A2 2 0 0 1 8.1 9.2h7.8a2 2 0 0 1 1.9 1.6L19 16M4 16h16v3h-2.5M4 19h2.5"/><circle class="ico-stroke" cx="8" cy="18" r="1.4"/><circle class="ico-stroke" cx="16" cy="18" r="1.4"/></svg>',
   family:'<svg viewBox="0 0 24 24"><circle class="ico-stroke" cx="9" cy="8" r="3"/><circle class="ico-stroke" cx="16.5" cy="10" r="2.2"/><path class="ico-stroke" d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5M14.5 15.4c2 .3 3.5 1.8 3.5 3.6"/></svg>',
+  watch:'<svg viewBox="0 0 24 24"><path class="ico-stroke" d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path class="ico-stroke" d="M9 12l2 2 4-4"/></svg>',
   gear:'<svg viewBox="0 0 24 24"><circle class="ico-stroke" cx="12" cy="12" r="3"/><path class="ico-stroke" d="M12 3.5v2.2M12 18.3v2.2M3.5 12h2.2M18.3 12h2.2M5.9 5.9l1.6 1.6M16.5 16.5l1.6 1.6M18.1 5.9l-1.6 1.6M7.5 16.5l-1.6 1.6"/></svg>',
   finance:'<svg viewBox="0 0 24 24"><path class="ico-stroke" d="M4 18V6m0 12h16M7.5 14v-3m4.5 3V8m4.5 6v-5"/></svg>',
 };
@@ -286,12 +287,12 @@ const I = {
 /* ---------- navigation ---------- */
 const NAV = [
   {id:'today', label:'Today', icon:I.today},
-  {id:'goals', label:'Goals', icon:I.goals},
+  {id:'watch', label:'Watch', icon:I.watch},
   {id:'projects', label:'Projects', icon:I.projects},
   {id:'vault', label:'Vault', icon:I.vault},
   {id:'finance', label:'Finance', icon:I.finance},
 ];
-const RAIL = [...NAV, {id:'home', label:'Home', icon:I.home},{id:'vehicles', label:'Vehicles', icon:I.car},{id:'family', label:'Family', icon:I.family}];
+const RAIL = [NAV[0], NAV[1], {id:'goals', label:'Goals', icon:I.goals}, NAV[2], NAV[3], NAV[4], {id:'home', label:'Home', icon:I.home},{id:'vehicles', label:'Vehicles', icon:I.car},{id:'family', label:'Family', icon:I.family}];
 function route(){ return location.hash.replace('#','') || 'today'; }
 function go(r){ location.hash = r; }
 window.addEventListener('hashchange', render);
@@ -332,6 +333,36 @@ function renewalFeed(){
   return out.filter(r=>r.days!==null).sort((a,b)=>a.days-b.days);
 }
 
+/* ---------- value engine: savings ledger + renewal radar ---------- */
+function ensureValue(){ if(!S.saves) S.saves=[]; }   // each: {amt, why, at}
+function totalSaved(){ ensureValue(); return S.saves.reduce((a,s)=>a+Number(s.amt||0),0); }
+function recordSave(amt, why){
+  ensureValue(); if(!amt) return;
+  S.saves.unshift({amt:Number(amt), why, at:Date.now()}); S.saves=S.saves.slice(0,100);
+  log('Saved '+fmtMoney(amt)+' — '+why);
+}
+/* estimated annual cost of a subscription, used when one is cancelled */
+function subAnnual(s){ return s.cycle==='Yearly'?Number(s.amount||0):Number(s.amount||0)*12; }
+
+/* the radar: everything time-sensitive, scored by urgency, with the $ at stake */
+function radar(){
+  const out=[];
+  const add=(label,date,goto,stake,kind)=>{ const d=daysUntil(date); if(d===null) return;
+    out.push({label,date,days:d,goto,stake:stake||0,kind}); };
+  S.home.forEach(x=>{ if(x.nextDue) add(x.item+' — service due', x.nextDue,'home',0,'maintenance');
+                      if(x.warrantyUntil) add(x.item+' — warranty ends', x.warrantyUntil,'home',0,'warranty'); });
+  S.vehicles.forEach(v=>{ if(v.insurance) add(v.name+' — insurance renews', v.insurance,'vehicles',0,'insurance');
+                          if(v.registration) add(v.name+' — registration renews', v.registration,'vehicles',0,'registration'); });
+  S.vault.forEach(d=>{ if(d.expires) add(d.title+' — expires', d.expires,'vault',0,'document'); });
+  S.finance.bills.forEach(b=>{ if(b.dueDay){ const d=new Date(); let due=new Date(d.getFullYear(),d.getMonth(),Math.min(28,+b.dueDay||1));
+    if(due<d) due=new Date(d.getFullYear(),d.getMonth()+1,Math.min(28,+b.dueDay||1));
+    add(b.name+' — bill due', due.toISOString().slice(0,10),'finance',Number(b.amount||0),'bill'); }});
+  S.finance.subs.forEach(s=>{ /* surface subs as review prompts (potential savings) */
+    out.push({label:s.name+' — still using it?', date:null, days:9999, goto:'finance', stake:subAnnual(s), kind:'sub', sub:s}); });
+  return out.sort((a,b)=>a.days-b.days);
+}
+function moneyAtRisk(){ return radar().filter(r=>r.days<=30 && r.kind==='bill').reduce((a,r)=>a+r.stake,0); }
+
 /* ---------- views ---------- */
 const V = {};
 
@@ -360,6 +391,11 @@ V.today = ()=>{
       <div class="pulsefacts">${p.notes.map(n=>`<span>${n}</span>`).join('')}</div>
     </div>
   </div>
+
+  ${(totalSaved()||moneyAtRisk())?`<div class="section grid2">
+    ${totalSaved()?`<button class="stat" style="text-align:left;cursor:pointer" onclick="go('watch')"><div class="k">Saved with Avenor</div><div class="v" style="color:var(--verdant)">${fmtMoney(totalSaved())}</div></button>`:''}
+    ${moneyAtRisk()?`<button class="stat" style="text-align:left;cursor:pointer" onclick="go('watch')"><div class="k">Bills due ≤30d</div><div class="v">${fmtMoney(moneyAtRisk())}</div></button>`:''}
+  </div>`:''}
 
   <div class="section">
     <span class="eyebrow">Up Next</span>
@@ -393,6 +429,63 @@ V.today = ()=>{
 const dom=(r,ic,n,c)=>`<button class="domain" onclick="go('${r}')">${ic}<span class="dname">${n}</span><span class="dcount">${c}</span></button>`;
 
 const HORIZONS=['5 years','3 years','1 year','90 days','30 days'];
+V.watch = ()=>{
+  ensureValue();
+  const items = radar();
+  const urgent = items.filter(r=>r.kind!=='sub' && r.days<=30);
+  const soon   = items.filter(r=>r.kind!=='sub' && r.days>30 && r.days<=90);
+  const subs   = items.filter(r=>r.kind==='sub');
+  const atRisk = moneyAtRisk();
+  const saved  = totalSaved();
+  const recent = (S.saves||[]).slice(0,5);
+
+  const card = r => `<button class="row" style="width:100%;text-align:left" onclick="go('${r.goto}')">
+    <div class="grow"><div class="title">${esc(r.label)}</div>
+    <div class="meta">${r.date?fmtDate(r.date):''}${r.stake?(r.date?' · ':'')+fmtMoney(r.stake)+(r.kind==='sub'?'/yr':''):''}</div></div>
+    ${r.kind==='sub'
+      ? `<button class="chip brass" style="border:none;cursor:pointer" onclick="event.stopPropagation();cancelSub('${r.sub.id}')">Cancelled?</button>`
+      : `<span class="chip ${r.days<0?'red':r.days<=14?'brass':''}">${r.days<0?Math.abs(r.days)+'d late':r.days===0?'today':'in '+r.days+'d'}</span>`}
+  </button>`;
+
+  return `
+  <span class="eyebrow">Watch</span>
+  <h1 class="page">Nothing slips by.</h1>
+  <p class="sub">AVENOR watches your renewals, bills and warranties so a missed date never costs you.</p>
+
+  <div class="section pulsecard" style="background:linear-gradient(135deg,#10301f,#11182A)">
+    <span class="eyebrow" style="color:var(--brass-2)">Value delivered</span>
+    <div style="display:flex;align-items:flex-end;gap:14px;margin-top:10px">
+      <div style="font-family:var(--font-d);font-size:46px;line-height:1;color:#fff">${fmtMoney(saved)}</div>
+      <div style="color:rgba(255,255,255,.8);font-size:13.5px;padding-bottom:6px">saved or protected<br>since you started</div>
+    </div>
+    ${atRisk?`<p style="color:rgba(255,255,255,.85);font-size:13px;margin-top:12px"><b style="color:#fff">${fmtMoney(atRisk)}</b> in bills come due within 30 days — all tracked.</p>`:''}
+  </div>
+
+  ${urgent.length?`<div class="section"><span class="eyebrow">Next 30 days</span>
+    <div class="card rowlist" style="margin-top:12px">${urgent.map(card).join('')}</div></div>`:
+    `<div class="section card empty"><div class="glyph">✓</div><p>Nothing due in the next 30 days. You're ahead.</p></div>`}
+
+  ${subs.length?`<div class="section"><span class="eyebrow">Subscription check · ${fmtMoney(subs.reduce((a,s)=>a+s.stake,0))}/yr</span>
+    <p class="sub" style="margin:6px 0 0;font-size:13px">Tap a subscription you've cancelled to log the savings.</p>
+    <div class="card rowlist" style="margin-top:12px">${subs.map(card).join('')}</div></div>`:''}
+
+  ${soon.length?`<div class="section"><span class="eyebrow">On the horizon · 31–90 days</span>
+    <div class="card rowlist" style="margin-top:12px">${soon.map(card).join('')}</div></div>`:''}
+
+  ${recent.length?`<div class="section"><span class="eyebrow">Recent wins</span>
+    <div class="card rowlist" style="margin-top:12px">${recent.map(s=>`<div class="row"><div class="grow"><div class="title">${esc(s.why)}</div><div class="meta">${new Date(s.at).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</div></div><span class="chip green">+${fmtMoney(s.amt)}</span></div>`).join('')}</div></div>`:
+    `<div class="section card pad"><p style="font-size:13.5px;color:var(--ink-2)">As you cancel unused subscriptions and stay ahead of renewals, your savings tally builds here — the proof AVENOR pays for itself.</p></div>`}`;
+};
+
+function cancelSub(id){
+  const s=S.finance.subs.find(x=>x.id===id); if(!s) return;
+  if(!confirm('Mark “'+s.name+'” as cancelled? We\'ll remove it and log '+fmtMoney(subAnnual(s))+'/yr saved.')) return;
+  const saved=subAnnual(s);
+  S.finance.subs=S.finance.subs.filter(x=>x.id!==id);
+  recordSave(saved, 'Cancelled '+s.name);
+  save(); render(); toast('Nice — '+fmtMoney(saved)+'/yr back in your pocket');
+}
+
 V.goals = ()=>{
   return `
   <span class="eyebrow">Goals</span>
@@ -593,7 +686,7 @@ V.settings = ()=>{
     <span class="eyebrow">About</span>
     <div class="card rowlist" style="margin-top:12px">
       <a class="row" href="privacy.html" style="text-decoration:none;color:inherit"><div class="grow"><div class="title">Privacy policy</div><div class="meta">Short version: your data never leaves this device</div></div><span class="chip">View</span></a>
-      <div class="row"><div class="grow"><div class="title">Version</div><div class="meta">AVENOR 1.4 — hardened navigation</div></div></div>
+      <div class="row"><div class="grow"><div class="title">Version</div><div class="meta">AVENOR 1.5 — value engine</div></div></div>
     </div>
   </div>
 
@@ -781,13 +874,13 @@ function accountCard(){
         <div class="chip brass" style="margin-bottom:8px">Premium</div>
         <div style="font-family:var(--font-d);font-size:30px">$6<span style="font-size:14px;color:var(--ink-3)">/mo</span></div>
         <p style="font-size:12.5px;color:var(--ink-3);margin:6px 0 10px">or $48/yr · 14-day trial</p>
-        <p style="font-size:12.5px;color:var(--ink-2);line-height:1.7">Everything in Free<br>Cloud backup<br>Sync all devices<br>Unlimited vault</p>
+        <p style="font-size:12.5px;color:var(--ink-2);line-height:1.7">Renewal alerts<br>Cloud backup &amp; sync<br>Unlimited vault<br>Everything in Free</p>
       </div>
     </div>`;
   if(!cloudConfigured()) return `<div class="section"><span class="eyebrow">Subscription</span>
     ${plans}
     <div class="card pad" style="margin-top:12px">
-      <p style="font-size:13.5px;color:var(--ink-2)">Sign-in and Premium subscriptions turn on once cloud sync is connected for this deployment. Until then, AVENOR runs free and fully offline. Setup takes about 45 minutes — see <span class="mono">SETUP-CLOUD.md</span>.</p>
+      <p style="font-size:13.5px;color:var(--ink-2)">Sign-in and Premium subscriptions turn on once cloud sync is connected for this deployment. Most members save more than $6 in their first month by catching one renewal or unused subscription. Until then, AVENOR runs free and fully offline. Setup takes about 45 minutes — see <span class="mono">SETUP-CLOUD.md</span>.</p>
     </div></div>`;
   if(!sbSession) return `<div class="section"><span class="eyebrow">Subscription</span>
     ${plans}
@@ -1131,7 +1224,7 @@ function endTour(){ const ov=document.getElementById('tour'); if(ov) ov.remove()
 /* ---------- FAB ---------- */
 function fabAction(){
   const r=route().split('/')[0];
-  const map={goals:sheetGoal,projects:()=>{const sub=route().split('/')[1]; sub?sheetTask(sub):sheetProject();},home:sheetHome,vehicles:sheetVehicle,vault:sheetDoc,family:sheetPerson,finance:sheetBill};
+  const map={watch:sheetBill,goals:sheetGoal,projects:()=>{const sub=route().split('/')[1]; sub?sheetTask(sub):sheetProject();},home:sheetHome,vehicles:sheetVehicle,vault:sheetDoc,family:sheetPerson,finance:sheetBill};
   (map[r]||sheetProject)();
 }
 
