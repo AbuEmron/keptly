@@ -238,6 +238,7 @@ h1.page{font-family:var(--font-d);font-size:30px;line-height:1.15;font-weight:40
 <script>window.AVENOR_CONFIG = window.AVENOR_CONFIG || { SUPABASE_URL:"", SUPABASE_ANON_KEY:"" };</script>
 <script src="config.js" onerror="console.warn('config.js not found — running offline-only')"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js" onerror="window.__noSupabase=1"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" onerror="window.__noOCR=1"></script>
 <script>
 /* ================= AVENOR CORE =================
    Offline-first: local storage is the source of truth.
@@ -331,6 +332,122 @@ function renewalFeed(){
                           if(v.registration) out.push({label:v.name+' — registration', date:v.registration, days:daysUntil(v.registration), goto:'vehicles'}); });
   S.vault.forEach(d=>{ if(d.expires) out.push({label:d.title+' — expires', date:d.expires, days:daysUntil(d.expires), goto:'vault'}); });
   return out.filter(r=>r.days!==null).sort((a,b)=>a.days-b.days);
+}
+
+/* ================= VAULT: scan, OCR, encrypt ================= */
+let _vaultKey=null;            // CryptoKey for this session
+function vaultUnlocked(){ return !!_vaultKey; }
+async function deriveKey(pass){
+  const enc=new TextEncoder();
+  const salt = S.vaultSalt || (S.vaultSalt = Array.from(crypto.getRandomValues(new Uint8Array(16))));
+  const base = await crypto.subtle.importKey('raw', enc.encode(pass), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    {name:'PBKDF2', salt:new Uint8Array(salt), iterations:150000, hash:'SHA-256'},
+    base, {name:'AES-GCM', length:256}, false, ['encrypt','decrypt']);
+}
+async function encryptBlob(dataURL){
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const bytes=new TextEncoder().encode(dataURL);
+  const ct=await crypto.subtle.encrypt({name:'AES-GCM', iv}, _vaultKey, bytes);
+  return { iv:Array.from(iv), ct:btoa(String.fromCharCode(...new Uint8Array(ct))) };
+}
+async function decryptBlob(rec){
+  const ct=Uint8Array.from(atob(rec.ct), c=>c.charCodeAt(0));
+  const pt=await crypto.subtle.decrypt({name:'AES-GCM', iv:new Uint8Array(rec.iv)}, _vaultKey, ct);
+  return new TextDecoder().decode(pt);
+}
+function sheetUnlock(then){
+  const first=!S.vaultSalt;
+  openSheet(`<h3>${first?'Set a vault passphrase':'Unlock your vault'}</h3>
+  <p class="sub" style="margin:-6px 0 14px">${first?'Your scanned documents are encrypted on this device with this passphrase. We never see it — and it can\u2019t be recovered, so keep it safe.':'Enter your vault passphrase to view and add encrypted documents.'}</p>
+  ${FLD('vk','Passphrase','password','','')}
+  <div class="actions"><button class="btn btn-ink" onclick="doUnlock(${then?`'${then}'`:'null'})">${first?'Create vault':'Unlock'}</button></div>`);
+  setTimeout(()=>document.getElementById('vk')?.focus(),120);
+}
+async function doUnlock(then){
+  const p=fval('vk'); if(p.length<4) return toast('Use at least 4 characters');
+  try{
+    _vaultKey=await deriveKey(p);
+    // verify against a stored check token (detects wrong passphrase)
+    if(S.vaultCheck){ try{ await decryptBlob(S.vaultCheck); }catch(e){ _vaultKey=null; return toast('That passphrase doesn\u2019t match'); } }
+    else { S.vaultCheck=await encryptBlob('avenor-ok'); save(); }
+    closeSheet(); toast('Vault unlocked'); if(then==='scan') startScan(); else render();
+  }catch(e){ toast('Could not unlock'); }
+}
+function lockVault(){ _vaultKey=null; toast('Vault locked'); render(); }
+
+/* capture -> compress -> OCR -> parse -> prefill */
+function startScan(){
+  if(!vaultUnlocked()) return sheetUnlock('scan');
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.capture='environment';
+  inp.onchange=()=>{ const f=inp.files&&inp.files[0]; if(f) processScan(f); };
+  inp.click();
+}
+function compress(file, max=1400){
+  return new Promise(res=>{
+    const img=new Image(), rd=new FileReader();
+    rd.onload=()=>{ img.onload=()=>{
+      let {width:w,height:h}=img; const s=Math.min(1, max/Math.max(w,h)); w*=s; h*=s;
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      res(c.toDataURL('image/jpeg',0.7));
+    }; img.src=rd.result; };
+    rd.readAsDataURL(file);
+  });
+}
+function parseDoc(text){
+  const out={ref:'',expires:''};
+  // dates in many formats -> pick the latest future-ish one as expiry
+  const months={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+  const found=[];
+  (text.match(/\b(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})\b/g)||[]).forEach(m=>{
+    const p=m.split(/[\/\-\.]/).map(Number); let y=p[2]; if(y<100)y+=2000;
+    let mo=p[0]-1, da=p[1]; if(mo>11){ mo=p[1]-1; da=p[0]; }
+    const d=new Date(y,mo,da); if(!isNaN(d)) found.push(d);
+  });
+  (text.match(/\b(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{2,4})\b/gi)||[]).forEach(m=>{
+    const x=m.toLowerCase().match(/(\d{1,2})\s+([a-z]{3})[a-z]*\.?\s+(\d{2,4})/);
+    if(x){ let y=+x[3]; if(y<100)y+=2000; const d=new Date(y,months[x[2]],+x[1]); if(!isNaN(d)) found.push(d); }
+  });
+  // prefer a date labelled expiry/expires/valid thru, else the latest date
+  const today=new Date();
+  const future=found.filter(d=>d>today).sort((a,b)=>a-b);
+  const pick=future[0]||found.sort((a,b)=>b-a)[0];
+  if(pick) out.expires=pick.toISOString().slice(0,10);
+  // reference / policy / id numbers
+  const ref=(text.match(/(?:policy|member|account|acct)\s*(?:no\.?|number|#|id)?\s*[:#]?\s*([A-Z0-9]{2,}(?:-[A-Z0-9]+)*)/i)
+    || text.match(/(?:passport|license|licence|id)\s*(?:no\.?|number|#)?\s*[:#]?\s*([A-Z0-9]{5,})/i));
+  if(ref) out.ref=ref[1].trim().replace(/\s+/g,'');
+  // guess a category
+  const t=text.toLowerCase();
+  out.category = /passport|driver|licen[cs]e|identity|birth/.test(t)?'Identity'
+    : /insur|policy|coverage|premium/.test(t)?'Insurance'
+    : /warrant/.test(t)?'Warranties'
+    : /lease|agreement|contract/.test(t)?'Contracts'
+    : /receipt|invoice|total|paid/.test(t)?'Receipts'
+    : /patient|medical|prescription|rx|clinic/.test(t)?'Medical' : 'Other';
+  return out;
+}
+async function processScan(file){
+  openSheet(`<h3>Reading your document…</h3>
+    <div class="card pad" style="text-align:center;padding:30px 20px">
+      <div class="glyph" style="font-family:var(--font-d);font-size:26px;color:var(--brass)">A</div>
+      <p class="sub" id="ocrstat" style="margin-top:10px">Compressing image…</p>
+      <div class="progress" style="margin-top:14px"><i id="ocrbar" style="width:8%"></i></div>
+    </div>`);
+  const dataURL=await compress(file);
+  let parsed={ref:'',expires:'',category:'Other'}, text='';
+  const stat=document.getElementById('ocrstat'), bar=document.getElementById('ocrbar');
+  if(!window.__noOCR && window.Tesseract){
+    try{
+      if(stat) stat.textContent='Recognizing text…';
+      const r=await Tesseract.recognize(dataURL,'eng',{logger:m=>{ if(m.status==='recognizing text'&&bar) bar.style.width=(15+m.progress*80)+'%'; }});
+      text=r.data.text||''; parsed=parseDoc(text);
+    }catch(e){ console.warn('OCR failed',e); }
+  }
+  let enc=null; try{ enc=await encryptBlob(dataURL); }catch(e){ console.warn('encrypt failed',e); }
+  closeSheet();
+  sheetDoc(null, {scan:enc, ocr:text.slice(0,4000), ...parsed});
 }
 
 /* ---------- value engine: savings ledger + renewal radar ---------- */
@@ -592,15 +709,32 @@ V.vehicles = ()=> listModule({
 });
 
 const VAULT_CATS=['Identity','Insurance','Contracts','Receipts','Warranties','Medical','Property','Other'];
-V.vault = ()=> listModule({
-  eyebrow:'Document Vault', title:'On record, on hand.', sub:'Reference numbers, policies and expiry dates — stored on this device only.',
-  items:S.vault, sheet:'sheetDoc',
-  empty:'Passports, policies, contracts. Log the reference details so they’re one tap away.',
-  row:d=>`<div class="grow"><div class="title">${esc(d.title)}</div>
-    <div class="meta">${esc(d.category)}${d.ref?' · ':''}<span class="mono">${esc(d.ref||'')}</span></div></div>
-    ${d.expires?`<span class="chip ${daysUntil(d.expires)<0?'red':daysUntil(d.expires)<=30?'brass':''}">${daysUntil(d.expires)<0?'expired':'to '+fmtDate(d.expires)}</span>`:''}
-    <button class="iconbtn" onclick="sheetDoc('${d.id}')" aria-label="Edit"><svg width="16" height="16" viewBox="0 0 24 24"><path class="ico-stroke" d="M4 20l4-.8L19.5 7.7a2 2 0 0 0-2.8-2.8L5.2 16.4 4 20z"/></svg></button>`
-});
+V.vault = ()=>{
+  const locked = S.vaultSalt && !vaultUnlocked();
+  const hasScans = S.vault.some(d=>d.scan);
+  return `
+  <span class="eyebrow">Document Vault</span>
+  <div class="hgroup"><h1 class="page">On record, on hand.</h1>
+    ${vaultUnlocked()?`<button class="iconbtn" onclick="lockVault()" aria-label="Lock vault"><svg width="16" height="16" viewBox="0 0 24 24"><rect class="ico-stroke" x="5" y="11" width="14" height="9" rx="2"/><path class="ico-stroke" d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></button>`:''}</div>
+  <p class="sub">Scan a document and AVENOR reads the expiry date for you. Photos are encrypted on this device.</p>
+
+  <button class="btn btn-ink" style="width:100%;margin-top:16px" onclick="startScan()">
+    <svg width="18" height="18" viewBox="0 0 24 24"><path class="ico-stroke" d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M4 12h16"/></svg>
+    Scan a document
+  </button>
+  <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="sheetDoc()">Add details manually</button>
+
+  ${locked?`<div class="section card empty"><div class="glyph">🔒</div><p>Your vault is locked. Unlock to view your encrypted documents.</p><button class="btn btn-ink" onclick="sheetUnlock()">Unlock vault</button></div>`:`
+  <div class="section card rowlist">
+    ${S.vault.length?S.vault.map(d=>`<div class="row">
+      <div class="grow"><div class="title">${esc(d.title)}${d.scan?' <span class="chip" style="vertical-align:middle">scan</span>':''}</div>
+      <div class="meta">${esc(d.category)}${d.ref?' · ':''}<span class="mono">${esc(d.ref||'')}</span></div></div>
+      ${d.expires?`<span class="chip ${daysUntil(d.expires)<0?'red':daysUntil(d.expires)<=30?'brass':''}">${daysUntil(d.expires)<0?'expired':'to '+fmtDate(d.expires)}</span>`:''}
+      ${d.scan?`<button class="iconbtn" onclick="viewScan('${d.id}')" aria-label="View scan"><svg width="16" height="16" viewBox="0 0 24 24"><path class="ico-stroke" d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle class="ico-stroke" cx="12" cy="12" r="2.5"/></svg></button>`:''}
+      <button class="iconbtn" onclick="sheetDoc('${d.id}')" aria-label="Edit"><svg width="16" height="16" viewBox="0 0 24 24"><path class="ico-stroke" d="M4 20l4-.8L19.5 7.7a2 2 0 0 0-2.8-2.8L5.2 16.4 4 20z"/></svg></button>
+    </div>`).join(''):`<div class="empty"><div class="glyph">A</div><p>Scan your passport, insurance card or warranty. AVENOR fills in the details and tracks the expiry.</p></div>`}
+  </div>`}`;
+};
 
 V.family = ()=> listModule({
   eyebrow:'Family Hub', title:'Your people.', sub:'Contacts, medical notes and who to call when it matters.',
@@ -686,7 +820,7 @@ V.settings = ()=>{
     <span class="eyebrow">About</span>
     <div class="card rowlist" style="margin-top:12px">
       <a class="row" href="privacy.html" style="text-decoration:none;color:inherit"><div class="grow"><div class="title">Privacy policy</div><div class="meta">Short version: your data never leaves this device</div></div><span class="chip">View</span></a>
-      <div class="row"><div class="grow"><div class="title">Version</div><div class="meta">AVENOR 1.5 — value engine</div></div></div>
+      <div class="row"><div class="grow"><div class="title">Version</div><div class="meta">AVENOR 1.6 — encrypted scanning vault</div></div></div>
     </div>
   </div>
 
@@ -1015,21 +1149,45 @@ function saveService(vid){
   save(); closeSheet(); render(); toast('Service logged');
 }
 
-function sheetDoc(id){
+let _pendingScan=null;
+function sheetDoc(id, scan){
   const d=id?S.vault.find(x=>x.id===id):null;
-  openSheet(`<h3>${d?'Edit document':'Add document'}</h3>
+  _pendingScan = scan && scan.scan ? scan.scan : (d&&d.scan ? d.scan : null);
+  const cat = scan?.category || d?.category || 'Identity';
+  const ref = scan?.ref || d?.ref || '';
+  const exp = scan?.expires || d?.expires || '';
+  const detected = scan && (scan.ref||scan.expires) ?
+    `<div class="card pad" style="background:var(--verdant-tint);border-color:var(--verdant);margin-bottom:14px">
+      <div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--verdant)">✓ Read from your scan</div>
+      <p style="font-size:13px;color:var(--ink-2);margin-top:4px">${scan.expires?'Found expiry '+fmtDate(scan.expires)+'. ':''}${scan.ref?'Found reference '+esc(scan.ref)+'. ':''}Check and adjust below.</p>
+    </div>` : '';
+  openSheet(`<h3>${d?'Edit document':_pendingScan?'Save scanned document':'Add document'}</h3>
+  ${detected}
+  ${_pendingScan?`<div style="text-align:center;margin-bottom:14px"><img id="scanthumb" style="max-height:140px;border-radius:10px;border:1px solid var(--hairline)" alt="scan preview"></div>`:''}
   ${FLD('d_t','Document','text',d?.title||'','e.g. Passport — AJ')}
-  ${SEL('d_c','Category',VAULT_CATS,d?.category||'Identity')}
-  ${FLD('d_r','Reference / policy #','text',d?.ref||'')}
-  ${FLD('d_e','Expires','date',d?.expires||'')}
+  ${SEL('d_c','Category',VAULT_CATS,cat)}
+  ${FLD('d_r','Reference / policy #','text',ref)}
+  ${FLD('d_e','Expires','date',exp)}
   ${ACTIONS(`saveDoc('${id||''}')`, d?`delItem('vault','${id}')`:null)}`);
+  if(_pendingScan && vaultUnlocked()) decryptBlob(_pendingScan).then(u=>{ const im=document.getElementById('scanthumb'); if(im) im.src=u; }).catch(()=>{});
 }
 function saveDoc(id){
   const t=fval('d_t'); if(!t) return toast('Name the document');
   if(!id && S.vault.length>=25 && !isPremium()){ closeSheet(); toast('Free plan holds 25 documents — Premium is unlimited'); go('settings'); return; }
   const data={title:t,category:fval('d_c'),ref:fval('d_r'),expires:fval('d_e')};
+  if(_pendingScan) data.scan=_pendingScan;
   if(id){Object.assign(S.vault.find(x=>x.id===id),data);} else S.vault.push({id:uid(),...data});
-  save(); closeSheet(); render(); toast('Filed in the vault');
+  _pendingScan=null;
+  save(); closeSheet(); render(); toast(data.scan?'Scanned & encrypted in your vault':'Filed in the vault');
+}
+function viewScan(id){
+  if(!vaultUnlocked()) return sheetUnlock();
+  const d=S.vault.find(x=>x.id===id); if(!d||!d.scan) return;
+  decryptBlob(d.scan).then(u=>{
+    openSheet(`<h3>${esc(d.title)}</h3>
+    <img style="width:100%;border-radius:12px;border:1px solid var(--hairline)" src="${u}" alt="${esc(d.title)}">
+    <div class="actions"><button class="btn btn-ghost" onclick="closeSheet()">Close</button></div>`);
+  }).catch(()=>toast('Could not open'));
 }
 
 function sheetPerson(id){
@@ -1224,7 +1382,7 @@ function endTour(){ const ov=document.getElementById('tour'); if(ov) ov.remove()
 /* ---------- FAB ---------- */
 function fabAction(){
   const r=route().split('/')[0];
-  const map={watch:sheetBill,goals:sheetGoal,projects:()=>{const sub=route().split('/')[1]; sub?sheetTask(sub):sheetProject();},home:sheetHome,vehicles:sheetVehicle,vault:sheetDoc,family:sheetPerson,finance:sheetBill};
+  const map={watch:sheetBill,vault:startScan,goals:sheetGoal,projects:()=>{const sub=route().split('/')[1]; sub?sheetTask(sub):sheetProject();},home:sheetHome,vehicles:sheetVehicle,vault:sheetDoc,family:sheetPerson,finance:sheetBill};
   (map[r]||sheetProject)();
 }
 
