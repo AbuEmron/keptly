@@ -235,8 +235,9 @@ h1.page{font-family:var(--font-d);font-size:30px;line-height:1.15;font-weight:40
 <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
 <div class="emg" id="emg" role="dialog" aria-modal="true"></div>
 <div class="toast" id="toast" role="status"></div>
-<script src="/config.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>window.AVENOR_CONFIG = window.AVENOR_CONFIG || { SUPABASE_URL:"", SUPABASE_ANON_KEY:"" };</script>
+<script src="config.js" onerror="console.warn('config.js not found — running offline-only')"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js" onerror="window.__noSupabase=1"></script>
 <script>
 /* ================= AVENOR CORE =================
    Offline-first: local storage is the source of truth.
@@ -591,8 +592,8 @@ V.settings = ()=>{
   <div class="section">
     <span class="eyebrow">About</span>
     <div class="card rowlist" style="margin-top:12px">
-      <a class="row" href="/privacy.html" style="text-decoration:none;color:inherit"><div class="grow"><div class="title">Privacy policy</div><div class="meta">Short version: your data never leaves this device</div></div><span class="chip">View</span></a>
-      <div class="row"><div class="grow"><div class="title">Version</div><div class="meta">AVENOR 1.3 — search, tour, cloud-ready</div></div></div>
+      <a class="row" href="privacy.html" style="text-decoration:none;color:inherit"><div class="grow"><div class="title">Privacy policy</div><div class="meta">Short version: your data never leaves this device</div></div><span class="chip">View</span></a>
+      <div class="row"><div class="grow"><div class="title">Version</div><div class="meta">AVENOR 1.4 — hardened navigation</div></div></div>
     </div>
   </div>
 
@@ -647,7 +648,7 @@ function eraseAll(){
 let sb=null, sbSession=null, sbProfile=null, pushTimer=null, syncState='off'; // off|idle|syncing|synced|error
 
 function cloudConfigured(){
-  return typeof window.supabase!=='undefined' && window.AVENOR_CONFIG &&
+  return !window.__noSupabase && typeof window.supabase!=='undefined' && window.AVENOR_CONFIG &&
          AVENOR_CONFIG.SUPABASE_URL && AVENOR_CONFIG.SUPABASE_ANON_KEY;
 }
 function isPremium(){ return !!(sbProfile && (sbProfile.status==='active'||sbProfile.status==='trialing')); }
@@ -767,8 +768,33 @@ async function openPortal(){
 }
 
 function accountCard(){
-  if(!cloudConfigured()) return `<div class="section"><span class="eyebrow">Account & Sync</span>
-    <div class="card pad" style="margin-top:12px"><p style="font-size:14px;color:var(--ink-2)">Cloud sync isn\u2019t configured on this deployment yet. Add your Supabase keys to <span class="mono">config.js</span> — see the setup guide.</p></div></div>`;
+  // Plans are ALWAYS visible so the subscription page exists regardless of backend setup.
+  const plans = `
+    <div class="grid2" style="margin-top:12px">
+      <div class="card pad" style="border-color:var(--hairline)">
+        <div class="chip" style="margin-bottom:8px">Free</div>
+        <div style="font-family:var(--font-d);font-size:30px">$0</div>
+        <p style="font-size:12.5px;color:var(--ink-3);margin:6px 0 10px">Everything, on one device.</p>
+        <p style="font-size:12.5px;color:var(--ink-2);line-height:1.7">All nine modules<br>Works offline<br>Emergency Mode<br>25 vault documents</p>
+      </div>
+      <div class="card pad" style="border-color:var(--brass);background:var(--brass-tint)">
+        <div class="chip brass" style="margin-bottom:8px">Premium</div>
+        <div style="font-family:var(--font-d);font-size:30px">$6<span style="font-size:14px;color:var(--ink-3)">/mo</span></div>
+        <p style="font-size:12.5px;color:var(--ink-3);margin:6px 0 10px">or $48/yr · 14-day trial</p>
+        <p style="font-size:12.5px;color:var(--ink-2);line-height:1.7">Everything in Free<br>Cloud backup<br>Sync all devices<br>Unlimited vault</p>
+      </div>
+    </div>`;
+  if(!cloudConfigured()) return `<div class="section"><span class="eyebrow">Subscription</span>
+    ${plans}
+    <div class="card pad" style="margin-top:12px">
+      <p style="font-size:13.5px;color:var(--ink-2)">Sign-in and Premium subscriptions turn on once cloud sync is connected for this deployment. Until then, AVENOR runs free and fully offline. Setup takes about 45 minutes — see <span class="mono">SETUP-CLOUD.md</span>.</p>
+    </div></div>`;
+  if(!sbSession) return `<div class="section"><span class="eyebrow">Subscription</span>
+    ${plans}
+    <div class="card pad" style="margin-top:12px">
+      <p style="font-size:14px;color:var(--ink-2);margin-bottom:14px">Create a free account to start your <b>14-day Premium trial</b> — cloud backup and sync across every device.</p>
+      <button class="btn btn-ink" style="width:100%" onclick="sheetSignIn()">Sign in / Create account</button>
+    </div></div>`;
   if(!sbSession) return `<div class="section"><span class="eyebrow">Account & Sync</span>
     <div class="card pad" style="margin-top:12px">
       <p style="font-size:14px;color:var(--ink-2);margin-bottom:14px"><b>AVENOR Premium</b> backs up your life record to the cloud and syncs it across every device — phone, tablet, desktop. 14-day free trial.</p>
@@ -1114,7 +1140,8 @@ function render(){
   renderNav();
   const r=route().split('/')[0];
   const v=document.getElementById('view');
-  v.innerHTML=(V[r]||V.today)();
+  try { v.innerHTML=(V[r]||V.today)(); }
+  catch(err){ console.error('view '+r+' failed', err); v.innerHTML='<div class="empty" style="padding:50px 20px"><div class="glyph">A</div><p>This screen hit an error. Your data is safe.</p><button class="btn btn-ghost" onclick="go(\'today\')">Back to dashboard</button></div>'; }
   v.classList.remove('view'); void v.offsetWidth; v.classList.add('view');
   closeSheet();
 }
@@ -1133,12 +1160,12 @@ function init(){
 }
 function finishWelcome(tour){ S.profile.name=fval('w_n'); S.onboarded=1; save(); closeSheet(); render(); toast('Welcome'+(S.profile.name?', '+S.profile.name:'')); if(tour) setTimeout(startTour,300); }
 
-init();
-cloudInit();
+try { init(); } catch(err){ console.error('init failed', err); document.getElementById('view').innerHTML='<div class="empty" style="padding:60px 20px"><div class="glyph">A</div><p>Something went wrong loading your data. Your information is safe. Try reloading.</p><button class="btn btn-ink" onclick="location.reload()">Reload</button></div>'; }
+try { cloudInit(); } catch(err){ console.warn('cloud unavailable', err); }
 
 /* PWA: service worker + launch splash + shortcut handling */
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(()=>{}));
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').then(reg=>reg.update()).catch(()=>{}));
 }
 window.addEventListener('load', () => {
   setTimeout(()=>document.getElementById('splash').classList.add('gone'), 650);
