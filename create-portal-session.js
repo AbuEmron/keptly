@@ -38,8 +38,8 @@ export default async function handler(req, res) {
         metadata: { user_id: user.id }
       },
       allow_promotion_codes: true,
-      success_url: `${process.env.SITE_URL}/#settings`,
-      cancel_url: `${process.env.SITE_URL}/#settings`
+      success_url: `${process.env.SITE_URL}/app.html#settings`,
+      cancel_url: `${process.env.SITE_URL}/app.html#settings`
     });
 
     return res.status(200).json({ url: session.url });

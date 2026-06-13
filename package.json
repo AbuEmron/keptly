@@ -1,10 +1,383 @@
-{
-  "name": "avenor",
-  "version": "1.2.0",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "stripe": "^16.12.0",
-    "@supabase/supabase-js": "^2.45.0"
-  }
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#11182A">
+<meta name="description" content="AVENOR — the operating system for your life. Goals, projects, home, vehicles, documents, family and finances in one calm, offline-first place.">
+<title>AVENOR — The operating system for your life</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2311182A'/%3E%3Cpath d='M32 14 L48 50 H42.5 L32 25.5 L21.5 50 H16 Z' fill='%23F3F4F6'/%3E%3Crect x='25' y='38' width='14' height='2.6' rx='1.3' fill='%23B6924E'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Hanken+Grotesk:wght@400;500;600;700&family=Spline+Sans+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#11182A;--ink2:#3A4256;--ink3:#555D70;--porc:#F3F4F6;--card:#FFFFFF;
+  --hair:#E4E6EB;--hair2:#D7DAE0;--brass:#A07E3B;--brass2:#B6924E;--brass-tint:#F4EDDF;
+  --signal:#B3261E;--verdant:#2E7D5B;
+  --fd:'Marcellus',serif;--fb:'Hanken Grotesk',system-ui,sans-serif;--fm:'Spline Sans Mono',monospace;
+  --safe-b:env(safe-area-inset-bottom,0px);
 }
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{scroll-behavior:smooth}
+body{font-family:var(--fb);background:var(--ink);color:var(--porc);line-height:1.6;overflow-x:hidden}
+::selection{background:var(--brass-tint);color:var(--ink)}
+:focus-visible{outline:2px solid var(--brass2);outline-offset:3px;border-radius:4px}
+a{color:inherit;text-decoration:none}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+/* opening splash */
+#splash{position:fixed;inset:0;z-index:100;background:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;transition:opacity .6s ease,visibility .6s}
+#splash.gone{opacity:0;visibility:hidden;pointer-events:none}
+#splash svg{animation:sr .8s cubic-bezier(.22,1,.36,1)}
+#splash .wm{font-family:var(--fd);font-size:24px;letter-spacing:.42em;text-indent:.42em;color:var(--porc);animation:sr .8s .12s cubic-bezier(.22,1,.36,1) both}
+#splash .tag{font-size:13px;letter-spacing:.04em;color:var(--ink3);animation:sr .8s .24s cubic-bezier(.22,1,.36,1) both}
+@keyframes sr{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+
+/* nav */
+.nav{position:fixed;top:0;left:0;right:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:16px 22px;background:rgba(17,24,42,.6);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid rgba(255,255,255,.06)}
+.nav .brand{display:flex;align-items:center;gap:9px}
+.nav .wm{font-family:var(--fd);font-size:16px;letter-spacing:.36em;text-indent:.36em}
+.nav .cta{background:var(--porc);color:var(--ink);font-weight:600;font-size:13.5px;padding:9px 18px;border-radius:999px;transition:transform .18s}
+.nav .cta:active{transform:scale(.95)}
+
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+
+/* hero */
+.hero{min-height:100svh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:120px 22px 60px;position:relative}
+.hero::before{content:"";position:absolute;top:8%;left:50%;transform:translateX(-50%);width:min(640px,90%);height:420px;background:radial-gradient(60% 60% at 50% 40%,rgba(182,146,78,.20),transparent 70%);pointer-events:none}
+.eyebrow{font-family:var(--fd);font-size:12px;letter-spacing:.28em;text-transform:uppercase;color:var(--brass2);margin-bottom:18px;opacity:0;animation:fu .7s .2s forwards}
+.hero h1{font-family:var(--fd);font-weight:400;font-size:clamp(38px,8vw,76px);line-height:1.04;letter-spacing:-.01em;max-width:14ch;opacity:0;animation:fu .8s .32s forwards}
+.hero h1 em{font-style:normal;color:var(--brass2)}
+.hero p.lede{font-size:clamp(16px,2.4vw,20px);color:var(--ink3);max-width:54ch;margin-top:22px;opacity:0;animation:fu .8s .46s forwards}
+.herobtns{display:flex;gap:12px;margin-top:34px;flex-wrap:wrap;justify-content:center;opacity:0;animation:fu .8s .6s forwards}
+.btn{display:inline-flex;align-items:center;gap:9px;font-weight:600;font-size:15px;border-radius:999px;padding:14px 28px;transition:transform .18s,background .18s}
+.btn:active{transform:scale(.96)}
+.btn-gold{background:var(--brass2);color:var(--ink)}
+.btn-gold:hover{background:#c4a05c}
+.btn-line{border:1px solid rgba(255,255,255,.22);color:var(--porc)}
+.btn-line:hover{border-color:rgba(255,255,255,.5)}
+@keyframes fu{to{opacity:1;transform:none}}
+.scrollcue{position:absolute;bottom:26px;left:50%;transform:translateX(-50%);font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink3);opacity:0;animation:fu 1s 1s forwards}
+.scrollcue::after{content:"";display:block;width:1px;height:26px;background:linear-gradient(var(--brass2),transparent);margin:10px auto 0}
+
+/* section frame */
+.section{padding:90px 0;border-top:1px solid rgba(255,255,255,.06)}
+.section .head{text-align:center;margin-bottom:48px}
+.section .head .eyebrow{animation:none;opacity:1}
+.section h2{font-family:var(--fd);font-weight:400;font-size:clamp(28px,5vw,44px);line-height:1.1;max-width:18ch;margin:8px auto 0}
+.section h2 + p{color:var(--ink3);max-width:52ch;margin:16px auto 0;font-size:16px}
+
+/* ===== ANIMATED EXPLAINER ("video") ===== */
+.player{max-width:880px;margin:0 auto;display:grid;grid-template-columns:300px 1fr;gap:36px;align-items:center}
+@media(max-width:760px){.player{grid-template-columns:1fr;gap:28px}}
+.phone{justify-self:center;width:282px;height:580px;border-radius:42px;background:#05070d;padding:12px;box-shadow:0 30px 70px rgba(0,0,0,.5),inset 0 0 0 2px rgba(255,255,255,.05);position:relative}
+.phone .notch{position:absolute;top:18px;left:50%;transform:translateX(-50%);width:88px;height:22px;background:#05070d;border-radius:0 0 14px 14px;z-index:5}
+.screen{width:100%;height:100%;border-radius:32px;overflow:hidden;background:var(--porc);position:relative}
+.scene{position:absolute;inset:0;opacity:0;transform:translateY(8px) scale(.99);transition:opacity .5s ease,transform .5s cubic-bezier(.22,1,.36,1);padding:44px 16px 16px;color:var(--ink);overflow:hidden}
+.scene.on{opacity:1;transform:none}
+.scene .sb{display:flex;justify-content:space-between;align-items:center;font-size:9px;color:var(--ink3);margin-bottom:14px;padding:0 4px}
+.scene h4{font-family:var(--fd);font-weight:400;font-size:20px;margin-bottom:2px}
+.scene .meta{font-size:11px;color:var(--ink3)}
+.scene .ey{font-family:var(--fd);font-size:8.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--brass);margin-bottom:5px}
+.sc-card{background:#fff;border:1px solid var(--hair);border-radius:12px;padding:11px 12px;margin-top:9px;box-shadow:0 1px 3px rgba(17,24,42,.05)}
+.sc-row{display:flex;align-items:center;gap:9px;font-size:11.5px;padding:7px 0;border-bottom:1px solid var(--hair)}
+.sc-row:last-child{border:none}
+.sc-row .g{flex:1}.sc-row .t{font-weight:600}.sc-row .m{font-size:9.5px;color:var(--ink3)}
+.sc-chip{font-size:8px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:999px;background:var(--brass-tint);color:var(--brass)}
+.sc-chip.r{background:#FBEAE8;color:var(--signal)}
+.sc-chip.g{background:#E6F1EC;color:var(--verdant)}
+.sc-dot{width:15px;height:15px;border-radius:50%;border:1.5px solid var(--hair2);flex:none}
+.sc-dot.on{background:var(--verdant);border-color:var(--verdant)}
+.sc-gauge{display:flex;align-items:center;gap:14px;background:var(--ink);color:#fff;border-radius:16px;padding:15px;margin-top:6px}
+.sc-gauge .num{font-family:var(--fd);font-size:30px}
+.sc-gauge .lab{font-size:10px;color:rgba(255,255,255,.7)}
+.sc-bar{height:4px;border-radius:4px;background:var(--porc);margin-top:7px;overflow:hidden}
+.sc-bar i{display:block;height:100%;background:var(--brass2);border-radius:4px}
+.sc-emg{position:absolute;inset:0;background:#1A0E0D;color:#fff;padding:44px 16px 16px}
+.sc-emg .blk{background:rgba(255,255,255,.07);border-radius:12px;padding:11px;margin-top:9px;font-size:11px}
+.sc-emg .blk h5{font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:#E8857C;margin-bottom:6px}
+.sc-emg .cl{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.1)}
+.sc-emg .cl:last-child{border:none}.sc-emg .cl span{font-family:var(--fm);font-size:9.5px;color:rgba(255,255,255,.7)}
+
+/* explainer side: captions + controls */
+.exp .ey{font-family:var(--fd);font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--brass2)}
+.exp h3{font-family:var(--fd);font-weight:400;font-size:clamp(24px,4vw,32px);margin:8px 0 10px;min-height:2.2em}
+.exp p{color:var(--ink3);font-size:16px;min-height:3em}
+.exp .track{display:flex;gap:6px;margin:22px 0 16px}
+.exp .track i{flex:1;height:3px;border-radius:3px;background:rgba(255,255,255,.12);overflow:hidden;position:relative}
+.exp .track i b{position:absolute;inset:0;background:var(--brass2);transform:scaleX(0);transform-origin:left;border-radius:3px}
+.exp .track i.done b{transform:scaleX(1)}
+.exp .track i.now b{animation:fill var(--dur) linear forwards}
+@keyframes fill{to{transform:scaleX(1)}}
+.exp .ctl{display:flex;align-items:center;gap:14px}
+.exp .ctl button{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--porc);border:1px solid rgba(255,255,255,.2);padding:9px 16px;border-radius:999px;transition:border-color .18s}
+.exp .ctl button:hover{border-color:rgba(255,255,255,.5)}
+.exp .ctl .step{font-family:var(--fm);font-size:12px;color:var(--ink3);margin-left:auto}
+
+/* feature grid */
+.feat{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media(max-width:760px){.feat{grid-template-columns:1fr 1fr}}
+@media(max-width:460px){.feat{grid-template-columns:1fr}}
+.fcard{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:20px 18px;transition:transform .2s,border-color .2s}
+.fcard:hover{transform:translateY(-3px);border-color:rgba(182,146,78,.4)}
+.fcard svg{width:22px;height:22px;color:var(--brass2);margin-bottom:12px}
+.fcard h4{font-family:var(--fd);font-weight:400;font-size:18px;margin-bottom:5px}
+.fcard p{font-size:13.5px;color:var(--ink3)}
+
+/* steps to navigate */
+.steps{max-width:680px;margin:0 auto;display:flex;flex-direction:column;gap:2px}
+.step{display:flex;gap:18px;padding:22px 0;border-bottom:1px solid rgba(255,255,255,.07)}
+.step:last-child{border:none}
+.step .n{font-family:var(--fd);font-size:22px;color:var(--brass2);width:42px;flex:none}
+.step h4{font-family:var(--fd);font-weight:400;font-size:19px;margin-bottom:3px}
+.step p{font-size:14.5px;color:var(--ink3)}
+
+/* pricing */
+.plans{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:680px;margin:0 auto}
+@media(max-width:560px){.plans{grid-template-columns:1fr}}
+.plan{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:26px 24px}
+.plan.prem{background:linear-gradient(180deg,rgba(182,146,78,.14),rgba(255,255,255,.03));border-color:rgba(182,146,78,.5)}
+.plan .tag{font-family:var(--fd);font-size:13px;letter-spacing:.2em;text-transform:uppercase;color:var(--brass2)}
+.plan .price{font-family:var(--fd);font-size:38px;margin:10px 0 2px}
+.plan .price small{font-size:15px;color:var(--ink3)}
+.plan .note{font-size:13px;color:var(--ink3);margin-bottom:18px}
+.plan ul{list-style:none;margin-bottom:22px}
+.plan li{display:flex;gap:10px;align-items:flex-start;font-size:14px;padding:6px 0;color:var(--porc)}
+.plan li svg{width:16px;height:16px;color:var(--brass2);flex:none;margin-top:3px}
+.plan .btn{width:100%;justify-content:center}
+.pricehint{text-align:center;color:var(--ink3);font-size:13.5px;margin-top:22px}
+
+/* footer */
+.foot{border-top:1px solid rgba(255,255,255,.06);padding:40px 22px 60px;text-align:center;color:var(--ink3);font-size:13px}
+.foot .wm{font-family:var(--fd);letter-spacing:.36em;text-indent:.36em;color:var(--porc);font-size:14px;margin-bottom:14px}
+.foot a{color:var(--ink3);margin:0 10px;border-bottom:1px solid transparent;transition:border-color .18s}
+.foot a:hover{border-color:var(--ink3)}
+.ico{stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+</style>
+</head>
+<body>
+
+<div id="splash">
+  <svg width="80" height="80" viewBox="0 0 64 64"><rect width="64" height="64" rx="15" fill="#11182A" stroke="rgba(255,255,255,.1)"/><path d="M32 14 L48 50 H42.5 L32 25.5 L21.5 50 H16 Z" fill="#F3F4F6"/><rect x="25" y="38" width="14" height="2.6" rx="1.3" fill="#B6924E"/></svg>
+  <span class="wm">AVENOR</span>
+  <span class="tag">The operating system for your life</span>
+</div>
+
+<nav class="nav">
+  <div class="brand">
+    <svg width="22" height="22" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#11182A"/><path d="M32 14 L48 50 H42.5 L32 25.5 L21.5 50 H16 Z" fill="#F3F4F6"/><rect x="25" y="38" width="14" height="2.6" rx="1.3" fill="#B6924E"/></svg>
+    <span class="wm">AVENOR</span>
+  </div>
+  <a class="cta" href="/app.html">Open app</a>
+</nav>
+
+<header class="hero">
+  <span class="eyebrow">The Life Operating System</span>
+  <h1>Your whole life, finally in <em>one place</em>.</h1>
+  <p class="lede">Goals, projects, your home, your vehicles, documents, family and finances — organized by what you're trying to achieve, not by which app holds them. Offline-first. Calm by design.</p>
+  <div class="herobtns">
+    <a class="btn btn-gold" href="/app.html">Start free</a>
+    <a class="btn btn-line" href="#tour">Watch the tour</a>
+  </div>
+  <span class="scrollcue">See how it works</span>
+</header>
+
+<!-- ANIMATED EXPLAINER -->
+<section class="section" id="tour">
+  <div class="wrap">
+    <div class="head">
+      <span class="eyebrow">A 60-second tour</span>
+      <h2>This is AVENOR, in motion.</h2>
+      <p>It plays on its own. Tap any chapter to jump, or pause whenever you like.</p>
+    </div>
+    <div class="player">
+      <div class="phone"><div class="notch"></div><div class="screen" id="screen">
+        <div class="scene on" data-i="0">
+          <div class="sb"><span>9:41</span><span>AVENOR</span></div>
+          <div class="ey">Life Dashboard</div><h4>Good morning, AJ.</h4><div class="meta">Friday, June 12</div>
+          <div class="sc-gauge"><svg width="58" height="58" viewBox="0 0 58 58"><circle cx="29" cy="29" r="24" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="4"/><circle cx="29" cy="29" r="24" fill="none" stroke="#B6924E" stroke-width="4" stroke-linecap="round" stroke-dasharray="150.8" stroke-dashoffset="42" transform="rotate(-90 29 29)"/></svg><div><div class="num">72</div><div class="lab">Life Pulse</div></div></div>
+          <div class="ey" style="margin-top:14px">Up Next</div>
+          <div class="sc-card"><div class="sc-row"><div class="sc-dot"></div><div class="g"><div class="t">Get pre-approval estimate</div><div class="m">Save for a down payment</div></div></div><div class="sc-row"><div class="sc-dot"></div><div class="g"><div class="t">Complete week 4 long run</div><div class="m">Half marathon training</div></div></div></div>
+        </div>
+        <div class="scene" data-i="1">
+          <div class="sb"><span>9:41</span><span>AVENOR</span></div>
+          <div class="ey">Goals</div><h4>The long game.</h4>
+          <div class="ey" style="margin-top:14px">5 years</div>
+          <div class="sc-card"><div class="t" style="font-size:12.5px">Own a home</div><div class="m">1 linked project · 35%</div><div class="sc-bar"><i style="width:35%"></i></div></div>
+          <div class="ey" style="margin-top:12px">1 year</div>
+          <div class="sc-card"><div class="t" style="font-size:12.5px">Build a 6-month emergency fund</div><div class="m">55%</div><div class="sc-bar"><i style="width:55%"></i></div></div>
+          <div class="ey" style="margin-top:12px">90 days</div>
+          <div class="sc-card"><div class="t" style="font-size:12.5px">Run a half marathon</div><div class="m">40%</div><div class="sc-bar"><i style="width:40%"></i></div></div>
+        </div>
+        <div class="scene" data-i="2">
+          <div class="sb"><span>9:41</span><span>AVENOR</span></div>
+          <div class="ey">Project</div><h4>Save for a down payment</h4><div class="meta">Serves "Own a home" · $14,000 of $40,000</div>
+          <div class="sc-bar" style="margin:10px 0"><i style="width:35%"></i></div>
+          <div class="ey" style="margin-top:8px">Tasks · 2/4</div>
+          <div class="sc-card"><div class="sc-row"><div class="sc-dot on"></div><div class="g"><div class="t" style="text-decoration:line-through;color:var(--ink3)">Open a high-yield savings account</div></div></div><div class="sc-row"><div class="sc-dot on"></div><div class="g"><div class="t" style="text-decoration:line-through;color:var(--ink3)">Set up automatic transfer</div></div></div><div class="sc-row"><div class="sc-dot"></div><div class="g"><div class="t">Get pre-approval estimate</div></div></div></div>
+        </div>
+        <div class="scene" data-i="3">
+          <div class="sb"><span>9:41</span><span>AVENOR</span></div>
+          <div class="ey">Document Vault</div><h4>On record, on hand.</h4>
+          <div class="sc-card"><div class="sc-row"><div class="g"><div class="t">Passport</div><div class="m">Identity · •••• 4821</div></div><span class="sc-chip">to 2028</span></div><div class="sc-row"><div class="g"><div class="t">Auto insurance policy</div><div class="m">Insurance · POL-77204</div></div><span class="sc-chip r">40d</span></div><div class="sc-row"><div class="g"><div class="t">Apartment lease</div><div class="m">Contracts</div></div><span class="sc-chip">to Jan</span></div></div>
+        </div>
+        <div class="scene" data-i="4">
+          <div class="sb"><span>9:41</span><span>AVENOR</span></div>
+          <div class="ey">Finance Center</div><h4>Know your numbers.</h4>
+          <div class="sc-card" style="display:flex;gap:10px"><div style="flex:1"><div class="m">Monthly fixed</div><div class="t" style="font-family:var(--fm);font-size:17px">$1,630</div></div><div style="flex:1"><div class="m">Net position</div><div class="t" style="font-family:var(--fm);font-size:17px;color:var(--verdant)">$12,400</div></div></div>
+          <div class="ey" style="margin-top:12px">Bills</div>
+          <div class="sc-card"><div class="sc-row"><div class="g"><div class="t">Rent</div></div><b style="font-family:var(--fm);font-size:12px">$1,450</b></div><div class="sc-row"><div class="g"><div class="t">Electric</div></div><b style="font-family:var(--fm);font-size:12px">$95</b></div></div>
+        </div>
+        <div class="scene" data-i="5">
+          <div class="sc-emg">
+            <div class="sb" style="color:rgba(255,255,255,.5)"><span>9:41</span><span>AVENOR</span></div>
+            <div class="ey" style="color:#E8857C">Emergency Mode</div><h4 style="color:#fff">Stay calm. It's all here.</h4>
+            <div class="blk"><h5>Call now</h5><div class="cl">Emergency services <span>911</span></div><div class="cl">Maria · Spouse <span>555-0142</span></div><div class="cl">Dr. Allen <span>555-0199</span></div></div>
+            <div class="blk"><h5>Medical</h5>Blood type O+. Mild asthma — rescue inhaler in bag.</div>
+          </div>
+        </div>
+      </div></div>
+
+      <div class="exp" style="--dur:6s">
+        <div class="ey" id="exp-ey">Chapter 1</div>
+        <h3 id="exp-h">Everything starts on your dashboard</h3>
+        <p id="exp-p">Your Life Pulse score and the few things that need you today — surfaced the moment you open the app.</p>
+        <div class="track" id="track"></div>
+        <div class="ctl">
+          <button id="play" onclick="togglePlay()"><svg width="14" height="14" viewBox="0 0 24 24" id="playico"><path class="ico" d="M7 5v14M17 5v14"/></svg><span id="playlbl">Pause</span></button>
+          <button onclick="jump(0)"><svg width="14" height="14" viewBox="0 0 24 24"><path class="ico" d="M11 5l-7 7 7 7M20 5l-7 7 7 7"/></svg>Restart</button>
+          <span class="step" id="stepn">1 / 6</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- WHAT'S INSIDE -->
+<section class="section">
+  <div class="wrap">
+    <div class="head"><span class="eyebrow">Nine connected modules</span><h2>Organized by your life, not by file type.</h2></div>
+    <div class="feat" id="feat"></div>
+  </div>
+</section>
+
+<!-- HOW TO NAVIGATE -->
+<section class="section">
+  <div class="wrap">
+    <div class="head"><span class="eyebrow">Finding your way</span><h2>Navigating AVENOR takes about a minute.</h2></div>
+    <div class="steps">
+      <div class="step"><div class="n">01</div><div><h4>The bar at the bottom</h4><p>Five core areas live on the tab bar — Today, Goals, Projects, Vault and Finance. On desktop they're in the left sidebar, along with Home, Vehicles and Family.</p></div></div>
+      <div class="step"><div class="n">02</div><div><h4>The + button adds anything</h4><p>The floating button always adds whatever fits the screen you're on — a goal on Goals, a task inside a project, a document in the Vault.</p></div></div>
+      <div class="step"><div class="n">03</div><div><h4>Search finds it instantly</h4><p>The magnifier in the top bar searches across every module at once — a task, a policy number, a person, a bill.</p></div></div>
+      <div class="step"><div class="n">04</div><div><h4>Settings holds your account</h4><p>The gear icon opens Settings: download a backup, take the guided tour, and under Account &amp; Sync, start Premium to sync across devices.</p></div></div>
+      <div class="step"><div class="n">05</div><div><h4>Emergency is always one tap</h4><p>The red button in the corner opens Emergency Mode — contacts, medical info and your family plan — even with no signal.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="section" id="pricing">
+  <div class="wrap">
+    <div class="head"><span class="eyebrow">Pricing</span><h2>Free forever. Premium when you want sync.</h2></div>
+    <div class="plans">
+      <div class="plan">
+        <div class="tag">Free</div>
+        <div class="price">$0</div>
+        <div class="note">Everything, on one device. No account needed.</div>
+        <ul>
+          <li><svg class="ico" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>All nine life modules</li>
+          <li><svg class="ico" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Works fully offline</li>
+          <li><svg class="ico" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Emergency Mode</li>
+          <li><svg class="ico" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Backup &amp; restore · 25 vault documents</li>
+        </ul>
+        <a class="btn btn-line" href="/app.html">Start free</a>
+      </div>
+      <div class="plan prem">
+        <div class="tag">Premium</div>
+        <div class="price">$6<small> / month</small></div>
+        <div class="note">or $48 / year · 14-day free trial</div>
+        <ul>
+          <li><svg class="ico" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Everything in Free</li>
+          <li><svg class="ico" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Cloud backup, automatically</li>
+          <li><svg class="ico" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Sync across phone, tablet &amp; desktop</li>
+          <li><svg class="ico" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Unlimited document vault</li>
+        </ul>
+        <a class="btn btn-gold" href="/app.html#settings">Start 14-day trial</a>
+      </div>
+    </div>
+    <p class="pricehint">The subscription page lives inside the app under <b>Settings → Account &amp; Sync</b>. Cancel anytime, your data is always yours to export.</p>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="wm">AVENOR</div>
+  <p style="margin-bottom:14px">The operating system for your life.</p>
+  <div><a href="/app.html">Open app</a><a href="#tour">Tour</a><a href="#pricing">Pricing</a><a href="/privacy.html">Privacy</a></div>
+  <p style="margin-top:22px;opacity:.6">© 2026 AVENOR · Your data stays yours.</p>
+</footer>
+
+<script>
+/* splash */
+window.addEventListener('load',()=>setTimeout(()=>document.getElementById('splash').classList.add('gone'),1100));
+setTimeout(()=>document.getElementById('splash').classList.add('gone'),3000);
+
+/* feature grid */
+const FEAT=[
+  ['M3 11.5 12 4l9 7.5M5.5 10v9.5h13V10','Today','Your dashboard, Life Pulse and what needs you now.'],
+  ['M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17m0 5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7','Goals','Five horizons, from 30 days to five years out.'],
+  ['M4 7h16v12H4zM9 7V5h6v2','Projects','Tasks, budget and notes — each tied to a goal.'],
+  ['M4 21V8l8-5 8 5v13M9 21v-6h6v6','Home','Maintenance, appliances, warranties, utilities.'],
+  ['M5 16l1.2-5.2A2 2 0 0 1 8.1 9.2h7.8a2 2 0 0 1 1.9 1.6L19 16M4 16h16v3','Vehicles','Service history, renewals and running costs.'],
+  ['M4 5h16v14H4zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6','Vault','Documents, policies and expiry dates, encrypted-ready.'],
+  ['M9 8a3 3 0 1 0 0 .01M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5','Family','Shared people, medical notes, emergency contacts.'],
+  ['M4 18V6m0 12h16M7.5 14v-3m4.5 3V8m4.5 6v-5','Finance','Bills, subscriptions, debts, assets, net position.'],
+  ['M12 3.5v2.2M12 18.3v2.2M3.5 12h2.2M18.3 12h2.2M5.9 5.9l1.6 1.6M16.5 16.5l1.6 1.6M18.1 5.9l-1.6 1.6M7.5 16.5l-1.6 1.6','Emergency','One tap to everything that matters in a crisis.']
+];
+document.getElementById('feat').innerHTML=FEAT.map(f=>
+  `<div class="fcard"><svg class="ico" viewBox="0 0 24 24"><path d="${f[0]}"/></svg><h4>${f[1]}</h4><p>${f[2]}</p></div>`).join('');
+
+/* ===== explainer engine ===== */
+const CH=[
+  ['Chapter 1','Everything starts on your dashboard','Your Life Pulse score and the few things that need you today — surfaced the moment you open the app.'],
+  ['Chapter 2','Set goals across five horizons','From the next 30 days to a five-year vision. Every goal can carry the projects that make it real.'],
+  ['Chapter 3','Projects turn goals into motion','Open any project to find its tasks, budget and notes in one place. Check things off as you go.'],
+  ['Chapter 4','Your vault keeps the details ready','Passport numbers, policy references, expiry dates — on hand and offline, so nothing catches you out.'],
+  ['Chapter 5','See your money clearly','Bills, subscriptions, debts and assets roll up into your monthly cost and net position. No bank login required.'],
+  ['Chapter 6','Emergency Mode, always one tap','Contacts, medical information and your family plan — instantly, even without a signal.']
+];
+const DUR=6000;
+let cur=0, playing=true, timer=null;
+const track=document.getElementById('track');
+track.innerHTML=CH.map(()=>'<i><b></b></i>').join('');
+
+function paint(){
+  document.querySelectorAll('.scene').forEach(s=>s.classList.toggle('on', +s.dataset.i===cur));
+  document.getElementById('exp-ey').textContent=CH[cur][0];
+  document.getElementById('exp-h').textContent=CH[cur][1];
+  document.getElementById('exp-p').textContent=CH[cur][2];
+  document.getElementById('stepn').textContent=(cur+1)+' / '+CH.length;
+  [...track.children].forEach((bar,i)=>{ bar.classList.remove('now','done'); if(i<cur)bar.classList.add('done'); });
+  if(playing){ const b=track.children[cur]; void b.offsetWidth; b.classList.add('now'); }
+}
+function tick(){ clearTimeout(timer); if(!playing) return; timer=setTimeout(()=>{ cur=(cur+1)%CH.length; paint(); tick(); }, DUR); }
+function jump(i){ cur=i; if(!playing){playing=true;syncPlayBtn();} paint(); tick(); }
+function togglePlay(){ playing=!playing; syncPlayBtn(); if(playing){ paint(); tick(); } else { clearTimeout(timer); const b=track.children[cur].querySelector('b'); const cs=getComputedStyle(b); b.style.transform=cs.transform; b.style.animation='none'; } }
+function syncPlayBtn(){
+  document.getElementById('playlbl').textContent=playing?'Pause':'Play';
+  document.getElementById('playico').innerHTML=playing?'<path class="ico" d="M7 5v14M17 5v14"/>':'<path class="ico" d="M7 4l13 8-13 8z"/>';
+}
+paint(); tick();
+
+/* pause when scrolled out of view to save battery */
+const sec=document.getElementById('tour');
+if('IntersectionObserver' in window){
+  new IntersectionObserver(es=>es.forEach(e=>{ if(!e.isIntersecting && playing) togglePlay(); }),{threshold:.15}).observe(sec);
+}
+
+if('serviceWorker' in navigator) window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
+</script>
+</body>
+</html>
