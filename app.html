@@ -249,8 +249,21 @@ const store = (()=>{ // safe local persistence with in-memory fallback
   let mem={}, ok=false;
   try{ localStorage.setItem('__t','1'); localStorage.removeItem('__t'); ok=true; }catch(e){ ok=false; }
   return {
+    available: ok,
+    lastError: null,
     get(k){ try{ return ok ? JSON.parse(localStorage.getItem(k)) : (mem[k]??null);}catch(e){return null;} },
-    set(k,v){ try{ ok ? localStorage.setItem(k,JSON.stringify(v)) : (mem[k]=v);}catch(e){ mem[k]=v; } }
+    set(k,v){
+      this.lastError=null;
+      try{
+        if(ok){ localStorage.setItem(k,JSON.stringify(v)); }
+        else { mem[k]=v; }
+        return true;
+      }catch(e){
+        mem[k]=v;                 // keep it in memory for this session at least
+        this.lastError = (e&&e.name==='QuotaExceededError') ? 'quota' : 'error';
+        return false;
+      }
+    }
   };
 })();
 const uid = ()=> Date.now().toString(36)+Math.random().toString(36).slice(2,7);
@@ -275,7 +288,14 @@ S.finance = Object.assign({bills:[],subs:[],debts:[],assets:[]}, S.finance||{});
 S.legacy = Object.assign({contacts:[],wishes:'',documents:'',assets:''}, S.legacy||{});
 if(!S.medical) S.medical=[];
 if(!S.insurance) S.insurance=[];
-function save(){ store.set('keptly',S); if(typeof schedulePush==='function') schedulePush(); }
+function save(){
+  const okSaved = store.set('keptly',S);
+  if(!okSaved && typeof toast==='function'){
+    if(store.lastError==='quota') toast('Storage is full — download a backup and turn on cloud sync to keep adding');
+    else toast('Could not save to this device');
+  }
+  if(typeof schedulePush==='function') schedulePush();
+}
 function log(t){ S.activity.unshift({t, at:Date.now()}); S.activity=S.activity.slice(0,20); }
 function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2200); }
 
@@ -713,7 +733,7 @@ V.watch = ()=>{
 
   ${urgent.length?`<div class="section"><span class="eyebrow">Next 30 days</span>
     <div class="card rowlist" style="margin-top:12px">${urgent.map(card).join('')}</div></div>`:
-    `<div class="section card empty"><div class="glyph">✓</div><p>Nothing due in the next 30 days. You're ahead.</p></div>`}
+    `<div class="section card empty"><div class="glyph">✓</div><p>Nothing due in the next 30 days. Add a bill, insurance policy, or scan a document and Keptly will watch the dates for you.</p><button class="btn btn-ink" onclick="go('vault')">Scan a document</button></div>`}
 
   ${subs.length?`<div class="section"><span class="eyebrow">Subscription check · ${fmtMoney(subs.reduce((a,s)=>a+s.stake,0))}/yr</span>
     <p class="sub" style="margin:6px 0 0;font-size:13px">Tap a subscription you've cancelled to log the savings.</p>
@@ -794,7 +814,8 @@ function toggleTask(pid,tid){
 
 function projectDetail(id){
   const p=S.projects.find(p=>p.id===id);
-  if(!p) return `<p class="sub section">Project not found.</p>`;
+  if(!p) return `<button class="backlink" onclick="go('projects')">‹ All projects</button>
+    <div class="card empty section"><div class="glyph">A</div><p>This project no longer exists. It may have been deleted.</p><button class="btn btn-ink" onclick="go('projects')">Back to projects</button></div>`;
   const ts=p.tasks||[], done=ts.filter(t=>t.done).length;
   const g=S.goals.find(g=>g.id===p.goalId);
   return `
@@ -1065,7 +1086,7 @@ V.settings = ()=>{
     <span class="eyebrow">About</span>
     <div class="card rowlist" style="margin-top:12px">
       <a class="row" href="privacy.html" style="text-decoration:none;color:inherit"><div class="grow"><div class="title">Privacy policy</div><div class="meta">Short version: your data never leaves this device</div></div><span class="chip">View</span></a>
-      <div class="row"><div class="grow"><div class="title">Version</div><div class="meta">Keptly 2.2 — official logo</div></div></div>
+      <div class="row"><div class="grow"><div class="title">Version</div><div class="meta">Keptly 2.4 — launch-ready</div></div></div>
     </div>
   </div>
 
@@ -1423,6 +1444,17 @@ function sheetDoc(id, scan){
 function saveDoc(id){
   const t=fval('d_t'); if(!t) return toast('Name the document');
   if(!id && S.vault.length>=25 && !isPremium()){ closeSheet(); toast('Free plan holds 25 documents — Premium is unlimited'); go('settings'); return; }
+  // Guard against the local-storage ceiling for large scans on free (no cloud) accounts
+  if(_pendingScan && !isPremium() && store.available){
+    try{
+      const used = JSON.stringify(S).length + JSON.stringify(_pendingScan).length;
+      if(used > 4_200_000){ // ~4.2MB, leaving headroom under the ~5MB cap
+        closeSheet();
+        toast('This device is nearly full. Turn on Premium cloud backup to keep adding scans safely.');
+        go('settings'); return;
+      }
+    }catch(e){}
+  }
   const data={title:t,category:fval('d_c'),ref:fval('d_r'),expires:fval('d_e')};
   if(_pendingScan) data.scan=_pendingScan;
   if(id){Object.assign(S.vault.find(x=>x.id===id),data);} else S.vault.push({id:uid(),...data});
@@ -1536,8 +1568,11 @@ function searchIndex(){
   S.home.forEach(x=>out.push({type:'Home',label:x.item,sub:x.category||'',go:'home'}));
   S.vehicles.forEach(v=>{ out.push({type:'Vehicle',label:v.name,sub:'',go:'vehicles'});
     (v.services||[]).forEach(s=>out.push({type:'Service',label:s.type,sub:v.name,go:'vehicles'})); });
-  S.vault.forEach(d=>out.push({type:'Document',label:d.title,sub:d.category,go:'vault'}));
+  S.vault.forEach(d=>out.push({type:'Document',label:d.title,sub:[d.category,d.ref].filter(Boolean).join(' · '),go:'vault'}));
   S.family.forEach(f=>out.push({type:'Person',label:f.name,sub:f.relation||'',go:'family'}));
+  (S.insurance||[]).forEach(p=>out.push({type:'Insurance',label:p.name,sub:[p.type,p.provider,p.policy].filter(Boolean).join(' · '),go:'insurance'}));
+  (S.medical||[]).forEach(m=>out.push({type:'Medical',label:m.label,sub:[m.type,m.detail,m.person].filter(Boolean).join(' · '),go:'medical'}));
+  (S.legacy&&S.legacy.contacts||[]).forEach(c=>out.push({type:'Trusted contact',label:c.name,sub:c.relation||'',go:'legacy'}));
   S.finance.bills.forEach(b=>out.push({type:'Bill',label:b.name,sub:fmtMoney(b.amount),go:'finance'}));
   S.finance.subs.forEach(s=>out.push({type:'Subscription',label:s.name,sub:fmtMoney(s.amount),go:'finance'}));
   S.finance.debts.forEach(d=>out.push({type:'Debt',label:d.name,sub:fmtMoney(d.balance),go:'finance'}));

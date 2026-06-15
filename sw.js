@@ -1,5 +1,5 @@
 /* Keptly service worker — offline-first */
-const VERSION = 'keptly-v2';
+const VERSION = 'keptly-v4';
 const SHELL = [
   '/',
   '/index.html',
@@ -42,16 +42,17 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Fonts + same-origin assets: cache first, then network
+  // Fonts, same-origin assets, and trusted CDN libs: cache first, then network
   const cacheable = url.origin === location.origin ||
-    url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
+    url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com' ||
+    url.hostname === 'cdn.jsdelivr.net';
   if (cacheable) {
     e.respondWith(
       caches.match(e.request).then(hit => hit || fetch(e.request).then(r => {
         const copy = r.clone();
         caches.open(VERSION).then(c => c.put(e.request, copy));
         return r;
-      }))
+      }).catch(() => hit))
     );
   }
 });
