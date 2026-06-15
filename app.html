@@ -1086,7 +1086,7 @@ V.settings = ()=>{
     <span class="eyebrow">About</span>
     <div class="card rowlist" style="margin-top:12px">
       <a class="row" href="privacy.html" style="text-decoration:none;color:inherit"><div class="grow"><div class="title">Privacy policy</div><div class="meta">Short version: your data never leaves this device</div></div><span class="chip">View</span></a>
-      <div class="row"><div class="grow"><div class="title">Version</div><div class="meta">Keptly 2.4 — launch-ready</div></div></div>
+      <div class="row"><div class="grow"><div class="title">Version</div><div class="meta">Keptly 2.5 — auth clarified</div></div></div>
     </div>
   </div>
 
@@ -1213,20 +1213,30 @@ function syncLabel(){
 }
 
 /* ---- auth (email code, no passwords) ---- */
-function sheetSignIn(){
-  openSheet(`<h3>Sign in to Keptly</h3>
-  <p class="sub" style="margin:-6px 0 16px">We email you a 6-digit code. No password to remember or lose.</p>
+function sheetSignIn(mode){
+  const m = mode || 'in';   // 'in' = log in, 'up' = create account
+  openSheet(`<h3>${m==='up'?'Create your Keptly account':'Log in to Keptly'}</h3>
+  <p class="sub" style="margin:-6px 0 16px">${m==='up'?'Start your free account — we email you a secure 6-digit code, so there’s no password to create or lose.':'Enter your email and we’ll send a 6-digit code to log you in. No password needed.'}</p>
   ${FLD('si_e','Email','email','','you@example.com')}
-  <div class="actions"><button class="btn btn-ink" onclick="sendCode()">Email me a code</button></div>`);
+  <div class="actions"><button class="btn btn-ink" onclick="sendCode('${m}')">${m==='up'?'Create account':'Send my code'}</button></div>
+  <div style="text-align:center;margin-top:14px;font-size:13.5px;color:var(--ink-3)">
+    ${m==='up'
+      ? `Already have an account? <button onclick="sheetSignIn('in')" style="color:var(--brass);font-weight:600">Log in</button>`
+      : `New to Keptly? <button onclick="sheetSignIn('up')" style="color:var(--brass);font-weight:600">Create an account</button>`}
+  </div>`);
+  setTimeout(()=>document.getElementById('si_e')?.focus(),120);
 }
-async function sendCode(){
-  const email=fval('si_e'); if(!email||!email.includes('@')) return toast('Enter your email');
-  const { error } = await sb.auth.signInWithOtp({ email, options:{ shouldCreateUser:true } });
+async function sendCode(mode){
+  const email=fval('si_e'); if(!email||!email.includes('@')) return toast('Enter a valid email');
+  const isSignup = mode==='up';
+  const { error } = await sb.auth.signInWithOtp({ email, options:{ shouldCreateUser: true } });
   if(error) return toast(error.message||'Could not send code');
   openSheet(`<h3>Check your email</h3>
-  <p class="sub" style="margin:-6px 0 16px">Enter the 6-digit code sent to <b>${esc(email)}</b>.</p>
-  ${FLD('si_c','Code','text','','123456')}
-  <div class="actions"><button class="btn btn-ink" onclick="verifyCode('${esc(email)}')">Verify & sign in</button></div>`);
+  <p class="sub" style="margin:-6px 0 16px">We sent a 6-digit code to <b>${esc(email)}</b>. Enter it below to ${isSignup?'create your account':'log in'}.</p>
+  ${FLD('si_c','6-digit code','text','','123456')}
+  <div class="actions"><button class="btn btn-ink" onclick="verifyCode('${esc(email)}')">${isSignup?'Create account':'Log in'}</button></div>
+  <div style="text-align:center;margin-top:12px;font-size:13px;color:var(--ink-3)">Didn’t get it? <button onclick="sendCode('${mode}')" style="color:var(--brass);font-weight:600">Resend code</button> · <button onclick="sheetSignIn('${mode}')" style="color:var(--ink-3);font-weight:600">Change email</button></div>`);
+  setTimeout(()=>document.getElementById('si_c')?.focus(),120);
 }
 async function verifyCode(email){
   const token=fval('si_c'); if(!token) return toast('Enter the code');
@@ -1286,12 +1296,14 @@ function accountCard(){
     ${plans}
     <div class="card pad" style="margin-top:12px">
       <p style="font-size:14px;color:var(--ink-2);margin-bottom:14px">Create a free account to start your <b>14-day Premium trial</b> — cloud backup and sync across every device.</p>
-      <button class="btn btn-ink" style="width:100%" onclick="sheetSignIn()">Sign in / Create account</button>
+      <button class="btn btn-ink" style="width:100%" onclick="sheetSignIn('up')">Create free account</button>
+      <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="sheetSignIn('in')">Log in</button>
     </div></div>`;
   if(!sbSession) return `<div class="section"><span class="eyebrow">Account & Sync</span>
     <div class="card pad" style="margin-top:12px">
       <p style="font-size:14px;color:var(--ink-2);margin-bottom:14px"><b>Keptly Premium</b> backs up your life record to the cloud and syncs it across every device — phone, tablet, desktop. 14-day free trial.</p>
-      <button class="btn btn-ink" style="width:100%" onclick="sheetSignIn()">Sign in / Create account</button>
+      <button class="btn btn-ink" style="width:100%" onclick="sheetSignIn('up')">Create free account</button>
+      <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="sheetSignIn('in')">Log in</button>
     </div></div>`;
   if(!isPremium()) return `<div class="section"><span class="eyebrow">Account & Sync</span>
     <div class="card pad" style="margin-top:12px">
