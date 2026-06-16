@@ -55,9 +55,15 @@ input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
   .tabbar{display:none!important}
 }
 /* top bar */
-.topbar{display:flex;align-items:center;justify-content:space-between;padding:18px 0 10px;position:sticky;top:0;background:linear-gradient(var(--porcelain) 78%,rgba(243,244,246,0));z-index:30}
-.brandline{display:flex;align-items:center;gap:10px}
-.wordmark{font-family:var(--font-d);font-size:19px;letter-spacing:.34em;text-indent:.34em;color:var(--ink)}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:18px 0 10px;position:sticky;top:0;background:linear-gradient(var(--porcelain) 78%,rgba(243,244,246,0));z-index:30}
+.brandline{display:flex;align-items:center;gap:10px;min-width:0;flex-shrink:1;overflow:hidden}
+.topbar > div:last-child{flex-shrink:0}
+.wordmark{font-family:var(--font-d);font-size:19px;letter-spacing:.34em;text-indent:.34em;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:430px){
+  .wordmark{letter-spacing:.12em;text-indent:.12em;font-size:17px}
+  .sos{padding:7px 11px 7px 9px;font-size:12px}
+  .topbar > div:last-child{gap:6px}
+}
 @media(min-width:900px){.topbar .brandline{visibility:hidden}}
 .sos{display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--hairline);border-radius:999px;padding:7px 14px 7px 11px;font-weight:600;font-size:13px;color:var(--signal);box-shadow:var(--shadow-1);transition:transform .18s ease-out}
 .sos:active{transform:scale(.95)}
@@ -1086,7 +1092,7 @@ V.settings = ()=>{
     <span class="eyebrow">About</span>
     <div class="card rowlist" style="margin-top:12px">
       <a class="row" href="privacy.html" style="text-decoration:none;color:inherit"><div class="grow"><div class="title">Privacy policy</div><div class="meta">Short version: your data never leaves this device</div></div><span class="chip">View</span></a>
-      <div class="row"><div class="grow"><div class="title">Version</div><div class="meta">Keptly 2.5 — auth clarified</div></div></div>
+      <div class="row"><div class="grow"><div class="title">Version</div><div class="meta">Keptly 2.6 — header fix</div></div></div>
     </div>
   </div>
 

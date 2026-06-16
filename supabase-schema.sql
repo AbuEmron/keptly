@@ -1,4 +1,4 @@
--- AVENOR — Supabase schema
+-- Keptly — Supabase schema
 -- Run this once in: Supabase Dashboard → SQL Editor → New query → paste → Run
 
 -- 1) Profiles: one row per user, holds subscription status (written only by Stripe webhook via service role)
@@ -14,6 +14,7 @@ create table if not exists public.profiles (
 
 alter table public.profiles enable row level security;
 
+drop policy if exists "Users can read own profile" on public.profiles;
 create policy "Users can read own profile"
   on public.profiles for select
   using (auth.uid() = id);
@@ -21,7 +22,7 @@ create policy "Users can read own profile"
 -- No insert/update policies for users: subscription fields are server-managed.
 -- The webhook uses the service role key, which bypasses RLS.
 
--- 2) User state: the entire AVENOR life record as one JSONB document per user.
+-- 2) User state: the entire Keptly life record as one JSONB document per user.
 --    Last-write-wins sync. Simple, fast, and easy to migrate to normalized
 --    tables later when the Family Tier needs row-level sharing.
 create table if not exists public.user_state (
@@ -32,6 +33,7 @@ create table if not exists public.user_state (
 
 alter table public.user_state enable row level security;
 
+drop policy if exists "Users own their state" on public.user_state;
 create policy "Users own their state"
   on public.user_state for all
   using (auth.uid() = user_id)

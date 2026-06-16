@@ -1,5 +1,5 @@
 /* Keptly service worker — offline-first */
-const VERSION = 'keptly-v5';
+const VERSION = 'keptly-v6';
 const SHELL = [
   '/',
   '/index.html',
