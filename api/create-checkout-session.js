@@ -14,8 +14,8 @@ module.exports = async function handler(req, res) {
   const { interval, user_id } = req.body;
 
   const priceId = interval === 'yearly'
-    ? process.env.STRIPE_PRICE_ANNUAL_ID
-    : process.env.STRIPE_PRICE_MONTHLY_ID;
+    ? (process.env.STRIPE_PRICE_ANNUAL_ID  || 'price_1ThgQ7AEUpuHBUGlp98jO8XG')
+    : (process.env.STRIPE_PRICE_MONTHLY_ID || 'price_1ThgQ7AEUpuHBUGlwDuRHNF6');
 
   if (!priceId) {
     console.error('Missing Stripe price ID for interval:', interval);
